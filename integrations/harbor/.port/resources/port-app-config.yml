@@ -1,9 +1,9 @@
-createMissingRelatedEntities: true
 deleteDependentEntities: true
+createMissingRelatedEntities: true
 resources:
-  - kind: project
+  - kind: harbor-project
     selector:
-      query: "true"
+      query: 'true'
     port:
       entity:
         mappings:
@@ -11,14 +11,19 @@ resources:
           title: .name
           blueprint: '"harborProject"'
           properties:
-            public: .metadata.public == "true"
-            repoCount: .repo_count
+            name: .name
+            visibility: if .metadata.public == "true" then "public" else "private" end
+            description: .metadata.description // ""
             creationTime: .creation_time
             updateTime: .update_time
+            repositoryCount: .repo_count // 0
+            chartCount: .chart_count // 0
+            storageLimit: .storage_limit // -1
+            storageUsage: .storage_usage // 0
 
-  - kind: user
+  - kind: harbor-user
     selector:
-      query: "true"
+      query: 'true'
     port:
       entity:
         mappings:
@@ -26,44 +31,50 @@ resources:
           title: .username
           blueprint: '"harborUser"'
           properties:
-            email: .email
-            realname: .realname
-            adminRole: .sysadmin_flag
+            username: .username
+            email: .email // ""
+            realname: .realname // ""
+            adminFlag: .sysadmin_flag // false
             creationTime: .creation_time
+            updateTime: .update_time
 
-  - kind: repository
+  - kind: harbor-repository
     selector:
-      query: "true"
+      query: 'true'
     port:
       entity:
         mappings:
-          identifier: .name
-          title: .name | split("/") | .[1]
+          identifier: .name | gsub("/"; "_")
+          title: .name
           blueprint: '"harborRepository"'
           properties:
-            artifactCount: .artifact_count
-            pullCount: .pull_count
+            name: .name
+            description: .description // ""
+            artifactCount: .artifact_count // 0
+            pullCount: .pull_count // 0
             creationTime: .creation_time
             updateTime: .update_time
           relations:
-            project: .name | split("/") | .[0]
+            project: .project_name
 
-  - kind: artifact
+  - kind: harbor-artifact
     selector:
-      query: "true"
+      query: 'true'
     port:
       entity:
         mappings:
           identifier: .digest
-          title: (.tags[0].name // "untagged") + "@" + (.digest | split(":")[1][:12])
+          title: (.tags[0].name // "untagged") + "@" + (.digest[:12])
           blueprint: '"harborArtifact"'
           properties:
-            type: .type
+            digest: .digest
             mediaType: .media_type
             manifestMediaType: .manifest_media_type
-            size: .size
+            size: .size // 0
             pushTime: .push_time
             pullTime: .pull_time
             tags: [.tags[].name]
+            vulnerabilities: .scan_overview
           relations:
-            repository: .repository_name
+            repository: .repository_name | gsub("/"; "_")
+            project: .project_name

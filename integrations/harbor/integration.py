@@ -75,22 +75,22 @@ class HarborArtifactSelector(Selector):
 
 
 class HarborProjectConfig(ResourceConfig):
-    kind: Literal["project"]
+    kind: Literal["harbor-project"]
     selector: HarborProjectSelector
 
 
 class HarborUserConfig(ResourceConfig):
-    kind: Literal["user"]
+    kind: Literal["harbor-user"]
     selector: HarborUserSelector
 
 
 class HarborRepositoryConfig(ResourceConfig):
-    kind: Literal["repository"]
+    kind: Literal["harbor-repository"]
     selector: HarborRepositorySelector
 
 
 class HarborArtifactConfig(ResourceConfig):
-    kind: Literal["artifact"]
+    kind: Literal["harbor-artifact"]
     selector: HarborArtifactSelector
 
 

@@ -1,31 +1,24 @@
-description: Harbor container registry integration for Port
+description: Harbor integration for Port Ocean
 icon: Harbor
-docs: https://docs.getport.io/integrations/harbor
+docs: https://docs.port.io/build-your-software-catalog/sync-data-to-catalog/harbor/
 features:
   - type: exporter
     section: Container Registry
     resources:
-      - kind: project
-      - kind: user  
-      - kind: repository
-      - kind: artifact
-  - type: webhook
-    section: Container Registry
-    resources:
-      - kind: project
-      - kind: repository
-      - kind: artifact
-
+      - kind: harbor-project
+      - kind: harbor-user
+      - kind: harbor-repository
+      - kind: harbor-artifact
 configurations:
   - name: harborUrl
     required: true
-    type: string
-    description: Harbor instance URL (e.g., http://localhost:8081)
-  - name: username
+    type: url
+    description: Harbor instance URL (e.g., https://harbor.example.com)
+  - name: harborUsername
     required: true
     type: string
     description: Harbor username (admin or robot account)
-  - name: password
+  - name: harborPassword
     required: true
     type: string
     sensitive: true
@@ -51,7 +44,12 @@ configurations:
     default: true
     description: Verify SSL certificates
   - name: webhookSecret
-    required: false
     type: string
+    description: Optional secret used to verify incoming webhook requests from Harbor
     sensitive: true
-    description: Harbor webhook secret for signature validation
+    required: false
+saas:
+  enabled: false
+liveEvents:
+  enabled: true
+actionsProcessingEnabled: false

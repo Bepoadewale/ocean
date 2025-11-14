@@ -5,13 +5,12 @@ import re
 from datetime import datetime
 from loguru import logger
 from port_ocean.context.ocean import ocean
-from harbor.helpers.metrics import RequestMetrics
 
 
 class HarborClient:
     def __init__(self, base_url: str, username: str, password: str, 
                  max_concurrent_requests: int = 10, request_timeout: int = 30,
-                 rate_limit_delay: float = 0.1, verify_ssl: bool = True):
+                 rate_limit_delay: int = 1, verify_ssl: bool = True):
         self.base_url = base_url.rstrip("/")
         self.username = username
         self.password = password
@@ -35,38 +34,34 @@ class HarborClient:
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         url = f"{self.base_url}/api/v2.0/{endpoint.lstrip('/')}"
-        metrics = RequestMetrics(method="GET", url=url)
         
         async with self.semaphore:
-            try:
-                if self.rate_limit_delay > 0:
-                    logger.debug(f"Rate limiting: sleeping {self.rate_limit_delay}s")
-                    await asyncio.sleep(self.rate_limit_delay)
+            retries = 0
+            max_retries = 3
+            
+            while retries <= max_retries:
+                try:
+                    if self.rate_limit_delay > 0:
+                        delay = self.rate_limit_delay * (2 ** retries)  # Exponential backoff
+                        await asyncio.sleep(delay)
+                        
+                    response = await self.http_client.get(
+                        url, 
+                        headers=self.headers, 
+                        params=params or {},
+                        timeout=self.request_timeout
+                    )
                     
-                logger.debug(f"Making Harbor API request: GET {url}", params=params)
-                
-                response = await self.http_client.get(
-                    url, 
-                    headers=self.headers, 
-                    params=params or {}
-                )
-                
-                metrics.complete(response.status_code)
-                response.raise_for_status()
-                
-                result = response.json()
-                logger.debug(f"Harbor API response: {len(result) if isinstance(result, list) else 'object'} items")
-                
-                metrics.log_request()
-                return result
-                
-            except Exception as e:
-                error_msg = str(e)
-                metrics.complete(getattr(e.response, 'status_code', 0) if hasattr(e, 'response') else 0, error_msg)
-                metrics.log_request()
-                
-                logger.error(f"Harbor API error for {endpoint}: {error_msg}")
-                raise
+                    response.raise_for_status()
+                    return response.json()
+                    
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger.error(f"Harbor API request failed after {max_retries} retries: {e}")
+                        raise
+                    logger.warning(f"Harbor API request failed, retrying ({retries}/{max_retries}): {e}")
+                    await asyncio.sleep(1 * retries)  # Brief delay before retry
 
     async def get_projects(
         self, page: int = 1, page_size: int = 100, **filters
@@ -79,21 +74,14 @@ class HarborClient:
         if "owner" in filters:
             params["owner"] = filters["owner"]
             
-        logger.debug(f"Fetching projects page {page} with filters: {filters}")
         projects = await self._make_request("projects", params)
         
-        original_count = len(projects)
-        
         # Apply client-side filters
-        if "name_prefix" in filters and filters["name_prefix"]:
+        if filters.get("name_prefix"):
             projects = [p for p in projects if p["name"].startswith(filters["name_prefix"])]
-        if "name_regex" in filters and filters["name_regex"]:
+        if filters.get("name_regex"):
             pattern = re.compile(filters["name_regex"])
             projects = [p for p in projects if pattern.match(p["name"])]
-            
-        filtered_count = len(projects)
-        if filtered_count != original_count:
-            logger.debug(f"Client-side filtering: {original_count} -> {filtered_count} projects")
             
         return projects
 
@@ -104,9 +92,9 @@ class HarborClient:
         users = await self._make_request("users", params)
         
         # Apply client-side filters
-        if "admin_only" in filters and filters["admin_only"]:
+        if filters.get("admin_only"):
             users = [u for u in users if u.get("sysadmin_flag", False)]
-        if "email_domain" in filters and filters["email_domain"]:
+        if filters.get("email_domain"):
             domain = filters["email_domain"]
             users = [u for u in users if u.get("email", "").endswith(f"@{domain}")]
             
@@ -119,18 +107,15 @@ class HarborClient:
         repos = await self._make_request(f"projects/{project_name}/repositories", params)
         
         # Apply client-side filters
-        if "name_contains" in filters and filters["name_contains"]:
-            pattern = filters["name_contains"]
-            repos = [r for r in repos if pattern in r["name"]]
-        if "name_starts_with" in filters and filters["name_starts_with"]:
+        if filters.get("name_contains"):
+            repos = [r for r in repos if filters["name_contains"] in r["name"]]
+        if filters.get("name_starts_with"):
             prefix = filters["name_starts_with"]
             repos = [r for r in repos if r["name"].split("/")[-1].startswith(prefix)]
-        if "min_artifact_count" in filters and filters["min_artifact_count"]:
-            min_count = filters["min_artifact_count"]
-            repos = [r for r in repos if r.get("artifact_count", 0) >= min_count]
-        if "min_pull_count" in filters and filters["min_pull_count"]:
-            min_pulls = filters["min_pull_count"]
-            repos = [r for r in repos if r.get("pull_count", 0) >= min_pulls]
+        if filters.get("min_artifact_count"):
+            repos = [r for r in repos if r.get("artifact_count", 0) >= filters["min_artifact_count"]]
+        if filters.get("min_pull_count"):
+            repos = [r for r in repos if r.get("pull_count", 0) >= filters["min_pull_count"]]
             
         return repos
 
@@ -139,9 +124,8 @@ class HarborClient:
     ) -> List[Dict[str, Any]]:
         params = {"page": page, "page_size": page_size}
         
-        # Add with_scan_overview for vulnerability data
-        if filters.get("with_scan_results") or filters.get("min_severity"):
-            params["with_scan_overview"] = True
+        # Add scan data if needed
+        params["with_scan_overview"] = bool(filters.get("with_scan_results") or filters.get("min_severity"))
             
         repo_encoded = repository_name.replace("/", "%2F")
         artifacts = await self._make_request(
@@ -152,25 +136,23 @@ class HarborClient:
         filtered_artifacts = []
         for artifact in artifacts:
             # Filter by creation date
-            if "created_since" in filters and filters["created_since"]:
+            if filters.get("created_since"):
                 try:
-                    created_date = datetime.fromisoformat(artifact.get("push_time", "").replace("Z", "+00:00"))
-                    since_date = datetime.fromisoformat(filters["created_since"])
-                    if created_date < since_date:
+                    created = datetime.fromisoformat(artifact.get("push_time", "").replace("Z", "+00:00"))
+                    since = datetime.fromisoformat(filters["created_since"])
+                    if created < since:
                         continue
                 except (ValueError, TypeError):
                     continue
                     
             # Filter by media type
-            if "media_type" in filters and filters["media_type"]:
-                if artifact.get("media_type") != filters["media_type"]:
-                    continue
+            if filters.get("media_type") and artifact.get("media_type") != filters["media_type"]:
+                continue
                     
             # Filter by size
-            if "max_size_mb" in filters and filters["max_size_mb"]:
-                size_bytes = artifact.get("size", 0)
+            if filters.get("max_size_mb"):
                 max_bytes = filters["max_size_mb"] * 1024 * 1024
-                if size_bytes > max_bytes:
+                if artifact.get("size", 0) > max_bytes:
                     continue
                     
             # Filter by tag pattern

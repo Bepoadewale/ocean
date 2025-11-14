@@ -1,5 +1,5 @@
 class ObjectKind:
-    PROJECT = "project"
-    USER = "user"
-    REPOSITORY = "repository"
-    ARTIFACT = "artifact"
+    PROJECT = "harbor-project"
+    USER = "harbor-user"
+    REPOSITORY = "harbor-repository"
+    ARTIFACT = "harbor-artifact"
