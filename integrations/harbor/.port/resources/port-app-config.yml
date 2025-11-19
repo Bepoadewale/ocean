@@ -1,0 +1,80 @@
+deleteDependentEntities: true
+createMissingRelatedEntities: true
+resources:
+  - kind: harbor-project
+    selector:
+      query: 'true'
+    port:
+      entity:
+        mappings:
+          identifier: .name
+          title: .name
+          blueprint: '"harborProject"'
+          properties:
+            name: .name
+            visibility: if .metadata.public == "true" then "public" else "private" end
+            description: .metadata.description // ""
+            creationTime: .creation_time
+            updateTime: .update_time
+            repositoryCount: .repo_count // 0
+            chartCount: .chart_count // 0
+            storageLimit: .storage_limit // -1
+            storageUsage: .storage_usage // 0
+
+  - kind: harbor-user
+    selector:
+      query: 'true'
+    port:
+      entity:
+        mappings:
+          identifier: .username
+          title: .username
+          blueprint: '"harborUser"'
+          properties:
+            username: .username
+            email: .email // ""
+            realname: .realname // ""
+            adminFlag: .sysadmin_flag // false
+            creationTime: .creation_time
+            updateTime: .update_time
+
+  - kind: harbor-repository
+    selector:
+      query: 'true'
+    port:
+      entity:
+        mappings:
+          identifier: .name | gsub("/"; "_")
+          title: .name
+          blueprint: '"harborRepository"'
+          properties:
+            name: .name
+            description: .description // ""
+            artifactCount: .artifact_count // 0
+            pullCount: .pull_count // 0
+            creationTime: .creation_time
+            updateTime: .update_time
+          relations:
+            project: .project_name
+
+  - kind: harbor-artifact
+    selector:
+      query: 'true'
+    port:
+      entity:
+        mappings:
+          identifier: .digest
+          title: (.tags[0].name // "untagged") + "@" + (.digest[:12])
+          blueprint: '"harborArtifact"'
+          properties:
+            digest: .digest
+            mediaType: .media_type
+            manifestMediaType: .manifest_media_type
+            size: .size // 0
+            pushTime: .push_time
+            pullTime: .pull_time
+            tags: "[.tags[].name]"
+            vulnerabilities: .scan_overview
+          relations:
+            repository: (.repository_name | gsub("/"; "_"))
+            project: .project_name

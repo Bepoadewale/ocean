@@ -1,0 +1,34 @@
+description: Harbor integration for Port Ocean
+icon: Harbor
+docs: https://docs.port.io/build-your-software-catalog/sync-data-to-catalog/harbor/
+features:
+  - type: exporter
+    section: Container Registry
+    resources:
+      - kind: harbor-project
+      - kind: harbor-user
+      - kind: harbor-repository
+      - kind: harbor-artifact
+configurations:
+  - name: harborUrl
+    required: true
+    type: url
+    description: Harbor instance URL (e.g., https://harbor.example.com)
+  - name: harborUsername
+    required: true
+    type: string
+    description: Harbor username (admin or robot account)
+  - name: harborPassword
+    required: true
+    type: string
+    sensitive: true
+    description: Harbor password or robot token
+  - name: webhookSecret
+    type: string
+    description: Optional secret used to verify incoming webhook requests from Harbor
+    sensitive: true
+    required: false
+saas:
+  enabled: false
+liveEvents:
+  enabled: true
